@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style type="text/css">
+html {
+        height: 100%;
+}
+
+.full {
+        height: 100%;
+}
+
+body  {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background-color: black;
+        color: white;
+}
+
+textarea    {
+        border: none;
+        font-size: 0.6cm;
+        font-family: "Source Code Pro", monospace;
+        letter-spacing: -0.06em;
+        background-color: #012;
+        color: #ffe;
+        height: 100%;
+        width: 100%;
+}
+
+#nav    {
+        vertical-align: top;
+        font-family: "Source Sans Pro", sans;
+}
+
+#nav ul {
+        margin: 0;
+        padding: 0;
+        list-style-type: none;
+}
+
+#nav li {
+        margin: 0.5em;
+        padding: 0.5em;
+        min-width: 5em;
+}
+
+#nav_priority li {
+        background-color: #825;
+}
+
+#nav_normal li {
+        background-color: #036;
+}
+
+.selected {
+        outline: 0.2em solid #4cf;
+}
+
+</style>
+<script type="application/javascript" src="fullproof.js"></script>
+<script type="application/javascript" src="storage.js"></script>
+<script type="application/javascript" src="textarea.js"></script>
+<script type="application/javascript" src="navigation.js"></script>
+<script type="application/javascript">
+
+var LAST_PAGE_ID;
+
+/* nobble this char code and use it for command char when entered */
+/* these chars should correspond to a single key */
+var ENTER_CMD = '`';
+
+var handle_char = function(evt) {
+    evt = window.event ? window.event : evt;
+    var new_char_code = evt.charCode; /* not handling non-char keys */
+    var new_key_code = evt.keyCode;
+    var textarea = document.getElementById('editor');
+
+    if (ENTER_CMD.indexOf(String.fromCharCode(new_char_code)) > -1) {
+        /* perform search */
+        Textarea.insert_special_space(textarea);
+        return false;
+    } else if (new_key_code == 13 && evt.shiftKey) {
+        var title_hint = Textarea.get_current_word(textarea);
+        Navigation.clear();
+        Storage.find_page(title_hint,
+            function(result, priority) {
+                console.log('add_cb got '+result);
+                if (result) {
+                    if (priority) {
+                        document.location.hash = result.id;
+                    }
+                    Navigation.add(result, priority);
+                }
+            },
+            function() {
+                document.location.hash = new Date().getTime()+'&title_hint='+title_hint;
+            }
+        );
+        return false;
+    } else if (new_key_code == 13 && evt.ctrlKey) {
+        window.history.back();
+        return false;
+    } else {
+        /* do normal textarea editing */
+        return true;
+    }
+};
+
+var init = function() {
+    if ('indexedDB' in window) {
+        document.getElementById('db_warning').style.display = 'none';
+    }
+
+    var textarea = document.getElementById('editor');    
+    textarea.onkeypress = handle_char;
+    
+    Navigation.init('nav');
+    Storage.init_db();
+
+    window.onhashchange = (function() { 
+        return function() {
+            console.log('Hash changed to '+document.location.hash);
+            var id_match = /^#?([^&]+)/.exec(document.location.hash);
+            if (id_match) {
+                var new_page_id = id_match[1];
+            } else {
+                var new_page_id = 0;
+            }
+
+            var title_hint_match = /&title_hint=([^&]+)/.exec(document.location.hash);
+            if (title_hint_match) {
+                var title_hint = title_hint_match[1];
+            } else {
+                var title_hint = 'Home';
+            }
+
+            Storage.switch_page(textarea, LAST_PAGE_ID, new_page_id, title_hint);
+
+            LAST_PAGE_ID = new_page_id;
+
+            /* we'll assume that the nav was updated before the page switch,
+               so we just have to highlight the current one */
+            var new_button = document.getElementById('nav_'+new_page_id);
+            if (new_button) {
+                document.getElementById('nav_'+new_page_id).className = 'selected';
+            }
+        }
+    }(textarea));
+
+};
+
+</script>
+</head>
+<body onload="init()">
+<div id="db_warning">Sorry, you'll need HTML 5 (IndexedDB) to use this app.</div>
+<table class="full">
+    <tr class="full">
+        <td id="nav">
+        </td>
+        <td style="width: 100%;">
+            <textarea id="editor"></textarea>
+        <td>
+    </tr>
+</table>
+</body>
+</html>
+
