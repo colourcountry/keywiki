@@ -84,15 +84,10 @@ var handle_char = function(evt) {
         return false;
     } else if (new_key_code == 13 && evt.shiftKey) {
         var title_hint = Textarea.get_current_word(textarea);
-        Navigation.clear();
         Storage.find_page(title_hint,
-            function(result, priority) {
-                console.log('add_cb got '+result);
+            function(result) {
                 if (result) {
-                    if (priority) {
-                        document.location.hash = result.id;
-                    }
-                    Navigation.add(result, priority);
+                    document.location.hash = result.id;
                 }
             },
             function() {
@@ -107,6 +102,18 @@ var handle_char = function(evt) {
         /* do normal textarea editing */
         return true;
     }
+};
+
+var rebuild_indexes = function() {
+    Storage.clear_search_index(
+        function() {
+            console.log("Search index successfully rebuilt.");
+        }
+    );
+};
+
+var delete_all = function() {
+    alert("Delete all is not yet implemented.");
 };
 
 var init = function() {
@@ -137,16 +144,24 @@ var init = function() {
                 var title_hint = 'Home';
             }
 
-            Storage.switch_page(textarea, LAST_PAGE_ID, new_page_id, title_hint);
+            Storage.switch_page(textarea, LAST_PAGE_ID, new_page_id, title_hint,
+                function(result) {
+                    console.log("Updating navigation...");
+                    Navigation.clear();
+                    Navigation.add(result, true);
+                    Storage.update_search(title_hint, result.id,
+                        function(search_result) {
+                            console.log('Adding search navigation: '+search_result.first_line);
+                            Navigation.add(search_result, false);
+                        },
+                        function() {
+                            console.log('No search results for '+title_hint);
+                        }
+                    );
+                }
+            );
 
             LAST_PAGE_ID = new_page_id;
-
-            /* we'll assume that the nav was updated before the page switch,
-               so we just have to highlight the current one */
-            var new_button = document.getElementById('nav_'+new_page_id);
-            if (new_button) {
-                document.getElementById('nav_'+new_page_id).className = 'selected';
-            }
         }
     }(textarea));
 
@@ -165,6 +180,10 @@ var init = function() {
         <td>
     </tr>
 </table>
+<div>
+    <button onclick="rebuild_indexes()">Rebuild indexes</button>
+    <button onclick="delete_all()">Delete all</button>
+</div>
 </body>
 </html>
 

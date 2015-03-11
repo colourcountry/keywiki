@@ -25,15 +25,11 @@ var add = function(result, priority) {
     }
 
     var tmp = document.createElement('body');
-    tmp.innerHTML = '<li id="nav_'+result.id+'" onclick="Navigation.handle_click('+result.id+')" '+selected+'>'+result.first_line+'</li>';
+    tmp.innerHTML = '<li id="nav_'+result.id+'" onclick="Navigation.handle_click(&quot;'+result.id+'&quot;)" '+selected+'>'+result.first_line+'</li>';
     ul.appendChild(tmp.firstChild);
 }
 
-var handle_click = function(node, page_id) {
-    var old_button = document.getElementById(CONTAINER_ID+'_'+LAST_PAGE_ID);
-    if (old_button) {
-        document.getElementById(CONTAINER_ID+'_'+LAST_PAGE_ID).className = '';
-    }
+var handle_click = function(page_id) {
     document.location.hash = page_id;
 }
 
