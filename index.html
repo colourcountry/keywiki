@@ -105,15 +105,11 @@ var handle_char = function(evt) {
 };
 
 var rebuild_indexes = function() {
-    Storage.clear_search_index(
-        function() {
-            console.log("Search index successfully rebuilt.");
-        }
-    );
+    Storage.clear_search_index();
 };
 
 var delete_all = function() {
-    alert("Delete all is not yet implemented.");
+    Storage.delete_all_data();
 };
 
 var init = function() {
@@ -123,9 +119,11 @@ var init = function() {
 
     var textarea = document.getElementById('editor');    
     textarea.onkeypress = handle_char;
+
+    var welcome = document.getElementById('welcome').value;
     
     Navigation.init('nav');
-    Storage.init_db();
+    Storage.init_db(welcome);
 
     window.onhashchange = (function() { 
         return function() {
@@ -148,8 +146,13 @@ var init = function() {
                 function(result) {
                     console.log("Updating navigation...");
                     Navigation.clear();
-                    Navigation.add(result, true);
-                    Storage.update_search(title_hint, result.id,
+                    if (result) {
+                        Navigation.add(result, true);
+                        var except_id = result.id;
+                    } else {
+                        var except_id = null;
+                    }
+                    Storage.update_search(title_hint, except_id,
                         function(search_result) {
                             console.log('Adding search navigation: '+search_result.first_line);
                             Navigation.add(search_result, false);
@@ -176,7 +179,8 @@ var init = function() {
         <td id="nav">
         </td>
         <td style="width: 100%;">
-            <textarea id="editor"></textarea>
+            <textarea id="editor">
+            </textarea>
         <td>
     </tr>
 </table>
@@ -184,6 +188,28 @@ var init = function() {
     <button onclick="rebuild_indexes()">Rebuild indexes</button>
     <button onclick="delete_all()">Delete all</button>
 </div>
+<div style="display: none"><textarea id="welcome">
+Welcome to keywiki, a portable wiki for your own notes.
+
+- Type in any plain text format you care to.
+  The 'name' of a page is its first line.
+- Press Ctrl-ENTER with the cursor (caret) inside a word
+  to switch to the page whose name matches the word.
+- If you are looking at a stored page, 
+  you'll see its name in the pink button to the left.
+- If you switch to a page that doesn't yet exist,
+  a new page will be prepared for you ending in &#x270f;
+  Remove the &#x270f; and start writing!
+- As you create pages, blue buttons will appear to the left.
+  keywiki automatically searches and shows you all the pages
+  that contain the name (first line) of the page,
+  anywhere in their text.
+  Click on a button to switch to the page.
+- Your work is saved whenever you switch pages.
+  Everything is stored inside your browser,
+  nothing goes to the internet.
+
+Happy writing!</textarea></div>
 </body>
 </html>
 

@@ -6,12 +6,24 @@ var DB;
 /* these chars should correspond to a single key */
 var ENTER_CMD = '`';
 
+/* this string is placed at the end of new pages, they won't be saved
+   unless it is replaced */
+var EDIT_ME = '\u270f';
+
+/* if page with id 0 does not exist (even as an archive) then this is
+   a new install
+*/
+var NEW_INSTALL_MSG = '';
+
 var SEARCH_ENGINE = new fullproof.BooleanEngine();
 var SEARCH_INDEX;
 var SEARCH_READY = false;
 
 /* Sometimes the index lookup fails, so build a backup */
 var INDEX_BACKUP = {};
+
+/* Temporary store for IDs we know to be archives */
+var ARCHIVED_IDS = {};
 
 var raise_db_error = function(msg) {
     return function(e) {
@@ -56,7 +68,7 @@ var find_page = function(title_hint, add_result_cb, no_results_cb) {
             detail_rq.onerror = raise_db_error("Failed to get object from backup ID "+INDEX_BACKUP[title_hint]);
             detail_rq.onsuccess = function(e) {
                 if (e.target) {
-                    console.log("Found "+title_hint+" from backup ID");
+                    console.warn("Page not in IDB index but found via backup: "+title_hint);
                     add_result_cb(e.target.result);
                 } else {
                     console.log("No sign of "+title_hint+", removing from backup index");
@@ -85,35 +97,31 @@ var update_search = function(search_for, except_id, add_result_cb, no_results_cb
         } else {
             console.log('Search engine returned '+results.getSize());
 
-            SEARCH_ENGINE.lookup('__ARCHIVED__', function(archived_results) {
-                if (archived_results) {
-                    console.log(archived_results.getSize()+' archives');
-                    results.substract( archived_results ); /* sic */
-                }
-
-                var detail_tx = DB.transaction(["wiki"],"readonly");
-                var detail_wiki = detail_tx.objectStore("wiki");
-                if (results) {
-                    results.forEach(function(result) {
+            var detail_tx = DB.transaction(["wiki"],"readonly");
+            var detail_wiki = detail_tx.objectStore("wiki");
+            if (results) {
+                results.forEach(function(result) {
+                    if (ARCHIVED_IDS[result]) {
+                        console.log("Skipping archive result "+result);
+                    } else if (result != except_id) {
                         console.log("Getting details for search result "+result);
-                        if (result != except_id) {
-                            var detail_rq = detail_wiki.get(result);
-                            detail_rq.onerror = raise_db_error("Failed to get search result "+result);
-                            detail_rq.onsuccess = function(e) {
-                                if (e.target.result) {
-                                    if (e.target.result.replaced_by) {
-                                        console.log("Result "+e.target.result.id+" was an archive that snuck through");
-                                    } else {
-                                        add_result_cb(e.target.result);
-                                    }
+                        var detail_rq = detail_wiki.get(result);
+                        detail_rq.onerror = raise_db_error("Failed to get search result "+result);
+                        detail_rq.onsuccess = function(e) {
+                            if (e.target.result) {
+                                if (e.target.result.replaced_by) {
+                                    console.log("Result "+e.target.result.id+" was an archive");
+                                    ARCHIVED_IDS[e.target.result.id] = true;
                                 } else {
-                                    console.warn("Couldn't find search result, stale index?");
+                                    add_result_cb(e.target.result);
                                 }
+                            } else {
+                                console.warn("Couldn't find search result, stale index?");
                             }
                         }
-                    });
-                }
-            });
+                    }
+                });
+            }
         }
     });
 };
@@ -125,12 +133,12 @@ var check_and_save_page = function(textarea, page_id) {
     /* freeze the content */
     var new_content = textarea.value;
     var selection_start = textarea.selectionStart;
-    var selection_end = textarea.selectionend;
+    var selection_end = textarea.selectionEnd;
 
     if (!page_id) {
         console.log("Not saving page as have nowhere to put it.");
         return null;
-    } else if (new_content && new_content.endsWith('__EDIT_ME__')) {
+    } else if (new_content && new_content.trim().endsWith(EDIT_ME)) {
         console.log("Text area had not been edited, not saving");
         return null;
     }
@@ -150,6 +158,8 @@ var check_and_save_page = function(textarea, page_id) {
             /* page marked as archived */
             console.log("Page was archived, so cannot be updated");
             return null;
+        } else if (result.content == new_content) {
+            console.log("Page is unchanged from latest revision");
         } else {
             save_page(page_id, new_content, selection_start, selection_end);
         }
@@ -157,10 +167,9 @@ var check_and_save_page = function(textarea, page_id) {
 }
     
 
-/*  Save the content of textarea belonging to page_id.
+/*  Save the page referenced by page_id 
     - page_id is updated with a time stamp for archival and the first_line is changed
       so that it will no longer be returned by the exact match index
-    - '__ARCHIVED__' is injected into the search index for page_id (TODO)
     - if the textarea is not empty, a new page_id is generated and entered in the database
       with the textarea content
 
@@ -181,7 +190,7 @@ var save_page = function(page_id, new_content, selection_start, selection_end) {
             var first_line = new_content.toLowerCase();
         }
 
-        if (new_content.endsWith("__EDIT_ME__")) {
+        if (new_content.endsWith(EDIT_ME)) {
             console.error(first_line+" had not been edited");
             return;
         }
@@ -227,14 +236,7 @@ var save_page = function(page_id, new_content, selection_start, selection_end) {
     rq.onerror = raise_db_error( "Error archiving page: "+old_page_spec.first_line );
     rq.onsuccess = function(e) {
         console.log("Archived "+old_page_spec.first_line);
-        if (SEARCH_READY) {
-            /* no need to inject the content again */
-            SEARCH_ENGINE.injectDocument( '__ARCHIVED__', page_id,
-                function() {
-                    console.log("Injected archived flag for "+page_id);
-                }
-            );
-        }
+        ARCHIVED_IDS[old_page_spec.id] = true;
         if (new_page_spec) {
             var rq = wiki.put(new_page_spec, new_page_spec.id);
             rq.onerror = raise_db_error( "Error saving page: "+new_page_spec.first_line );
@@ -282,16 +284,26 @@ var switch_page = function(textarea, from_page_id, to_page_id, title_hint, resul
             }
         } else {
             console.log("No page with id "+to_page_id);
-            textarea.value = title_hint+'\n'+Array(title_hint.length+1).join('=')+'\n\n__EDIT_ME__';
+            if (to_page_id == 0) {
+                /* fresh db */
+                var welcome = NEW_INSTALL_MSG;
+            } else {
+                var welcome = '';
+            }
+            textarea.value = title_hint+'\n'+Array(title_hint.length+1).join('=')+'\n'+welcome+'\n'+EDIT_ME;
             textarea.selectionStart = textarea.value.length;
             textarea.selectionEnd = textarea.value.length;
             document.title = title_hint+' (new page)';
-            /* not a real page yet, so don't call back */
+            /* not a real page yet, so don't supply anything to callback */
+            result_cb();
         }
     }
 };
 
-var init_db = function() {
+var init_db = function(new_install_msg) {
+
+    /* inject welcome message from page */
+    NEW_INSTALL_MSG = new_install_msg;
 
     console.log('Opening DB...');
     var rq = indexedDB.open("wiki5",1);
@@ -328,7 +340,7 @@ var init_db = function() {
 
         analyzer: new fullproof.StandardAnalyzer(fullproof.normalizer.to_lowercase_nomark),
 
-        capabilities: new fullproof.Capabilities().setUseScores(false).setDbName("wiki_search"),
+        capabilities: new fullproof.Capabilities().setUseScores(false).setDbName("wiki2_search"),
 
         initializer: function(injector, cb) {
             var tx = DB.transaction(["wiki"],"readonly");
@@ -338,6 +350,7 @@ var init_db = function() {
             rq.onerror = raise_db_error( "Error counting object store" );
             rq.onsuccess = function(e) {
                 var count = e.target.result;
+                console.log("Counted "+count+" pages to index.");
 
                 /* Not really sure why fullproof worries that injections will get reordered---
                    cf. http://reyesr.github.io/fullproof/tutorial.html
@@ -349,13 +362,20 @@ var init_db = function() {
                     var result = e.target.result;
                     if (result) {
                         injector.inject(result.value.content, result.value.id, synchro);
+                        count--;
                         result.continue();
+                    } else {
+                        if (count > 0) {
+                            console.log("Injected all results but still have "+count+" left according to count.");
+                        }
+                        cb();
                     }
                 }
             }
         }
     };
 
+    console.log("Opening search engine");
     SEARCH_ENGINE.open([SEARCH_INDEX],
         function() {
             console.log( "Search engine is ready!" );
@@ -369,17 +389,36 @@ var init_db = function() {
 
 };
 
-var clear_search_index = function(cb) {
-    if (SEARCH_READY) {
-        console.log("Clearing search index");
-        SEARCH_ENGINE.clear(cb);
+var delete_all_data = function() {
+    console.log("Deleting all data");
+    var tx = DB.transaction(["wiki"],"readwrite");
+    var wiki = tx.objectStore("wiki");
+    var rq = wiki.clear();
+    rq.onsuccess = function(e) {
+        console.log("All data deleted");
+        clear_search_index();
     }
+};
+
+var clear_search_index = function() {
+    if (!SEARCH_READY) {
+        console.log("Can't clear search index as search is not ready.");
+        return;
+    }
+
+    console.log("Clearing search index");
+    SEARCH_ENGINE.clear(
+        function() {
+            console.log("Search index cleared");
+        }
+    );
 };
 
 return { find_page: find_page,
          switch_page: switch_page,
          update_search: update_search,
          clear_search_index: clear_search_index,
+         delete_all_data: delete_all_data,
          init_db: init_db };
 
 })();
