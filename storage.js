@@ -6,10 +6,6 @@ var DB;
 /* these chars should correspond to a single key */
 var ENTER_CMD = '`';
 
-/* this string is placed at the end of new pages, they won't be saved
-   unless it is replaced */
-var EDIT_ME = '\u270f';
-
 /* if page with id 0 does not exist (even as an archive) then this is
    a new install
 */
@@ -38,10 +34,13 @@ var raise_db_error = function(msg) {
    and calls add_result_cb(obj, priority); calls no_results_cb() if not.
    The backup index only contains IDs: if title matches an ID but not an object,
    we try a straightforward get to obtain the object.
+
+   Parameters:
+    title_hint - the first line to look for
+    add_result_cb - callback when a matching page is found
+    no_results_cb - callback if there was no matching page
 */
 var find_page = function(title_hint, add_result_cb, no_results_cb) {
-
-    title_hint = title_hint.toLowerCase();
 
     var tx = DB.transaction(["wiki"],"readonly");
     var wiki = tx.objectStore("wiki");
@@ -49,7 +48,7 @@ var find_page = function(title_hint, add_result_cb, no_results_cb) {
     console.log("Getting from index: "+title_hint);
     var index = wiki.index("first_line");
 
-    var rq = index.get(title_hint);
+    var rq = index.get(title_hint.toLocaleLowerCase());
     /* FIXME: when the title hint matches several pages this just returns the first one (oldest one?) */
 
     rq.onerror = raise_db_error( "Error getting title "+title_hint+" from index" );
@@ -135,11 +134,15 @@ var check_and_save_page = function(textarea, page_id) {
     var selection_start = textarea.selectionStart;
     var selection_end = textarea.selectionEnd;
 
+    if (new_content.indexOf('\n') > -1) {
+        var first_line = new_content.slice(0,new_content.indexOf('\n')).toLocaleLowerCase();
+    } else {
+        var first_line = new_content.toLocaleLowerCase();
+    }
+
+
     if (!page_id) {
         console.log("Not saving page as have nowhere to put it.");
-        return null;
-    } else if (new_content && new_content.trim().endsWith(EDIT_ME)) {
-        console.log("Text area had not been edited, not saving");
         return null;
     }
 
@@ -153,7 +156,7 @@ var check_and_save_page = function(textarea, page_id) {
         var result = e.target.result;
         if (!result) {
             console.log("Couldn't find existing page "+page_id );
-            save_page(page_id, new_content, selection_start, selection_end);
+            save_page(page_id, first_line, new_content, selection_start, selection_end);
         } else if (result.replaced_by) {
             /* page marked as archived */
             console.log("Page was archived, so cannot be updated");
@@ -161,9 +164,15 @@ var check_and_save_page = function(textarea, page_id) {
         } else if (result.content == new_content) {
             console.log("Page is unchanged from latest revision");
         } else {
-            save_page(page_id, new_content, selection_start, selection_end);
+            save_page(page_id, first_line, new_content, selection_start, selection_end);
         }
     }
+
+    /* return the first_line we have derived,
+       which is usable even if page is archived or unchanged.
+       This will be used to provide a guaranteed nav button for
+       the page we have just left */
+    return first_line;
 }
     
 
@@ -177,23 +186,14 @@ var check_and_save_page = function(textarea, page_id) {
     by the same searches that previously yielded the old page.
 
     A separate process may (doesn't yet) come round and archive the old page versions.
+
+    NB: in the context of page switching the 'new' page is the page we are switching from.
 */
-var save_page = function(page_id, new_content, selection_start, selection_end) {
+var save_page = function(page_id, first_line, new_content, selection_start, selection_end) {
     var tx = DB.transaction(["wiki"],"readwrite");
     var wiki = tx.objectStore("wiki");
 
     if (new_content) {
-
-        if (new_content.indexOf('\n') > -1) {
-            var first_line = new_content.slice(0,new_content.indexOf('\n')).toLowerCase();
-        } else {
-            var first_line = new_content.toLowerCase();
-        }
-
-        if (new_content.endsWith(EDIT_ME)) {
-            console.error(first_line+" had not been edited");
-            return;
-        }
 
         var new_page_spec = {
             first_line: first_line,
@@ -243,7 +243,6 @@ var save_page = function(page_id, new_content, selection_start, selection_end) {
             rq.onsuccess = function(e) {
                 INDEX_BACKUP[new_page_spec.first_line] = new_page_spec.id;
                 console.log("Saved "+new_page_spec.id+": "+new_page_spec.first_line);
-                console.dir(new_page_spec);
                 if (SEARCH_READY) {
                     SEARCH_ENGINE.injectDocument( new_page_spec.content, new_page_spec.id,
                         function() {
@@ -256,11 +255,18 @@ var save_page = function(page_id, new_content, selection_start, selection_end) {
     }
 }
 
-var switch_page = function(textarea, from_page_id, to_page_id, title_hint, result_cb) {
+
+var switch_page = function(textarea, to_page_id, title_hint, from_page_id, from_title_hint, template, result_cb) {
     console.log('Switching to page '+to_page_id+' with title hint "'+title_hint+'"');
 
-    check_and_save_page(textarea, from_page_id);
+    /* Save the page we are leaving and remember what it was called */
+    var from_title = check_and_save_page(textarea, from_page_id);
 
+    if (!from_title) {
+        from_title = from_title_hint;
+    }
+
+    /* Get the new page */
     var tx = DB.transaction(["wiki"],"readonly");
     var wiki = tx.objectStore("wiki");
 
@@ -272,7 +278,7 @@ var switch_page = function(textarea, from_page_id, to_page_id, title_hint, resul
             if (e.target.result.replaced_by) {
                 /* this id is an archived page, find the next version */
                 console.log( "id "+e.target.result.id+" was replaced by "+e.target.result.replaced_by);
-                document.location.hash = e.target.result.replaced_by;
+                Location.set( e.target.result.replaced_by, title_hint, from_page_id, from_title);
             } else {
                 console.log("Got page "+to_page_id+": "+e.target.result.first_line);
                 console.dir(e.target.result);
@@ -284,13 +290,7 @@ var switch_page = function(textarea, from_page_id, to_page_id, title_hint, resul
             }
         } else {
             console.log("No page with id "+to_page_id);
-            if (to_page_id == 0) {
-                /* fresh db */
-                var welcome = NEW_INSTALL_MSG;
-            } else {
-                var welcome = '';
-            }
-            textarea.value = title_hint+'\n'+Array(title_hint.length+1).join('=')+'\n'+welcome+'\n'+EDIT_ME;
+            textarea.value = template;
             textarea.selectionStart = textarea.value.length;
             textarea.selectionEnd = textarea.value.length;
             document.title = title_hint+' (new page)';
@@ -306,7 +306,7 @@ var init_db = function(new_install_msg) {
     NEW_INSTALL_MSG = new_install_msg;
 
     console.log('Opening DB...');
-    var rq = indexedDB.open("wiki5",1);
+    var rq = indexedDB.open("keywiki",1);
 
     rq.onerror = raise_db_error( "Error opening wiki database" );
     rq.onupgradeneeded = function(e) {
@@ -361,7 +361,11 @@ var init_db = function(new_install_msg) {
                 cursor_rq.onsuccess = function(e) {
                     var result = e.target.result;
                     if (result) {
-                        injector.inject(result.value.content, result.value.id, synchro);
+                        if (result.replaced_by) {
+                            /* don't inject archived page */
+                        } else {
+                            injector.inject(result.value.content, result.value.id, synchro);
+                        }
                         count--;
                         result.continue();
                     } else {
@@ -400,6 +404,52 @@ var delete_all_data = function() {
     }
 };
 
+var delete_archives = function() {
+    console.log("Deleting archives");
+    var tx = DB.transaction(["wiki"],"readwrite");
+    var wiki = tx.objectStore("wiki");
+    var rq = wiki.openCursor();
+    rq.onsuccess = function(e) {
+        var result = e.target.result;
+        if (result) {
+            if (result.value.replaced_by) {
+                var delete_rq = wiki.delete(result.value.id);
+                delete_rq.onsuccess = function(e) {
+                    console.log("Deleted archive "+result.value.first_line);
+                }
+            } else {
+                console.log("Keeping "+result.value.first_line);
+            }
+            result.continue();
+        }
+    }
+};
+
+var export_pages = function(include_archives) {
+    var tx = DB.transaction(["wiki"],"readonly");
+    var wiki = tx.objectStore("wiki");
+    var rq = wiki.openCursor();
+    var pages = [];
+    rq.onsuccess = function(e) {
+        var result = e.target.result;
+        if (result) {
+            if (include_archives || !result.value.replaced_by) {
+                pages.push(result.value);
+            }
+            result.continue();
+        } else {
+            var blob = new Blob([JSON.stringify(pages, null, 4)],
+                                {'type':'application/json;charset=utf-8;'});
+            var save_url = window.URL.createObjectURL(blob);
+
+            var save_link = document.getElementById('save_link');
+            save_link.setAttribute('href', save_url);
+            save_link.setAttribute('download', 'keywiki.json');
+            save_link.click();
+        }
+    }    
+}
+
 var clear_search_index = function() {
     if (!SEARCH_READY) {
         console.log("Can't clear search index as search is not ready.");
@@ -419,6 +469,8 @@ return { find_page: find_page,
          update_search: update_search,
          clear_search_index: clear_search_index,
          delete_all_data: delete_all_data,
+         delete_archives: delete_archives,
+         export_pages: export_pages,
          init_db: init_db };
 
 })();

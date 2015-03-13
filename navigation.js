@@ -8,29 +8,45 @@ var safe_html = function(str) {
 
 var clear = function() {
     var container = document.getElementById(CONTAINER_ID);
-    container.innerHTML = '<ul id="'+CONTAINER_ID+'_priority"></ul><ul id="'+CONTAINER_ID+'_normal"></ul>'
+    container.innerHTML = '<ul id="'+CONTAINER_ID+'-priority"></ul><ul id="'+CONTAINER_ID+'-normal"></ul>';
 }
 
 var add = function(result, priority) {
-    console.log('Adding '+result.first_line+' with priority '+priority);
-    if (priority) {
-        var ul = document.getElementById(CONTAINER_ID+'_priority');
-    } else {
-        var ul = document.getElementById(CONTAINER_ID+'_normal');
-    }
-    if (result.id == LAST_PAGE_ID) {
-        var selected = 'class="selected"';
-    } else {
-        var selected = '';
+
+    if (!result.first_line) {
+        console.warn("Can't add page with empty first_line");
+        return;
     }
 
-    var tmp = document.createElement('body');
-    tmp.innerHTML = '<li id="nav_'+result.id+'" onclick="Navigation.handle_click(&quot;'+result.id+'&quot;)" '+selected+'>'+result.first_line+'</li>';
-    ul.appendChild(tmp.firstChild);
+    console.log('Adding '+result.first_line+' with priority '+priority);
+
+    if (priority) {
+        var ul = document.getElementById( CONTAINER_ID+'-priority' );
+    } else {
+        var ul = document.getElementById( CONTAINER_ID+'-normal' );
+    }
+
+    var new_id = 'nav_'+result.id;
+
+    if ( document.getElementById(new_id) ) {
+        console.log('Nav already had a button for '+new_id);
+    } else {
+        console.log('Adding button for '+new_id);
+
+        var tmp = document.createElement( 'ul' );
+        tmp.innerHTML = '<li id="'+new_id+
+                   '"><button onclick="Navigation.handle_click(&quot;'+result.id+
+                   '&quot;,&quot;'+result.first_line+
+                   '&quot;)">'+result.first_line+'</button></li>';
+        ul.appendChild( tmp.firstChild );
+    }
 }
 
-var handle_click = function(page_id) {
-    document.location.hash = page_id;
+var handle_click = function(page_id, title_hint) {
+    /* get current page ID and maybe even its original title */
+    var location = Location.from_hash();
+
+    Location.set( page_id, title_hint, location.page_id, location.title_hint );
 }
 
 var init = function(container_id) {

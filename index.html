@@ -5,10 +5,28 @@
 <style type="text/css">
 html {
         height: 100%;
+        font-family: "Source Sans Pro", sans-serif;
 }
 
 .full {
         height: 100%;
+}
+
+.columns {
+        display: flex;
+        flex-direction: row;
+}
+
+.nav-container {
+        flex-grow: 1;
+        display: inline-flex;
+        flex-direction: column;
+        justify-content: space-between;
+}
+
+.edit-container {
+        flex-grow: 10;
+        display: inline-block;
 }
 
 body  {
@@ -17,6 +35,7 @@ body  {
         padding: 0;
         background-color: black;
         color: white;
+        overflow: hidden;
 }
 
 textarea    {
@@ -31,69 +50,116 @@ textarea    {
 }
 
 #nav    {
+        width: 100%;
         vertical-align: top;
-        font-family: "Source Sans Pro", sans;
+        overflow-y: scroll;
 }
 
-#nav ul {
+.nav-container ul {
         margin: 0;
         padding: 0;
         list-style-type: none;
 }
 
-#nav li {
+li {
         margin: 0.5em;
-        padding: 0.5em;
-        min-width: 5em;
 }
 
-#nav_priority li {
+.nav-container li {
+        background-color: #444;
+}
+
+li.nav-priority, #nav-priority li {
         background-color: #825;
 }
 
-#nav_normal li {
+li.nav-normal, #nav-normal li {
         background-color: #036;
 }
 
-.selected {
-        outline: 0.2em solid #4cf;
+button {
+        padding: 0.5em;
+        color: white;
+        border: none;
+        text-align: left;
+        background-color: #825;
+}
+
+.nav-container button {
+        width: 100%;
+        background-color: transparent;
+}
+
+#help-container {
+        position: fixed;
+        max-height: 75%;
+        bottom: 0;
+        left: 0;
+        overflow-y: scroll;
+        display: none;
+}
+
+#help {
+        padding: 0.5em;
+        background-color: #000;
+        border-top: 0.5em solid #444;
+}
+
+.warning {
+        padding: 1em;
+        background-color: #a00;
+        font-weight: bold;
 }
 
 </style>
 <script type="application/javascript" src="fullproof.js"></script>
+<script type="application/javascript" src="location.js"></script>
 <script type="application/javascript" src="storage.js"></script>
 <script type="application/javascript" src="textarea.js"></script>
 <script type="application/javascript" src="navigation.js"></script>
 <script type="application/javascript">
 
-var LAST_PAGE_ID;
+/*
+    Follow a link to the named page.
+    Parameters:
+        title_hint - the page name to find and navigate to
+        template - the template to use if no page is found
+*/
+var follow_link = function(title_hint, template) {
+    /* get current page ID and maybe even its original title */
+    var location = Location.from_hash();
 
-/* nobble this char code and use it for command char when entered */
-/* these chars should correspond to a single key */
-var ENTER_CMD = '`';
+    if (!title_hint) {
+        var textarea = document.getElementById('editor');
+        var title_hint = Textarea.get_current_word(textarea);
+    }
+
+    if (!template) {
+        template = title_hint+'\n'+Array(title_hint.length+1).join('=')+'\n'
+        if (title_hint == 'Front page') {
+            template += document.getElementById('welcome').value;
+        }
+    }
+
+    Storage.find_page(title_hint,
+        function(result) {
+            if (result) {
+                Location.set( result.id, result.first_line, location.page_id, location.title_hint );
+            }
+        },
+        function() {
+            Location.set( ''+new Date().getTime(), title_hint, location.page_id, location.title_hint, template );
+        }
+    );
+}
 
 var handle_char = function(evt) {
     evt = window.event ? window.event : evt;
     var new_char_code = evt.charCode; /* not handling non-char keys */
     var new_key_code = evt.keyCode;
-    var textarea = document.getElementById('editor');
 
-    if (ENTER_CMD.indexOf(String.fromCharCode(new_char_code)) > -1) {
-        /* perform search */
-        Textarea.insert_special_space(textarea);
-        return false;
-    } else if (new_key_code == 13 && evt.shiftKey) {
-        var title_hint = Textarea.get_current_word(textarea);
-        Storage.find_page(title_hint,
-            function(result) {
-                if (result) {
-                    document.location.hash = result.id;
-                }
-            },
-            function() {
-                document.location.hash = new Date().getTime()+'&title_hint='+title_hint;
-            }
-        );
+    if (new_key_code == 13 && evt.shiftKey) {
+        follow_link();
         return false;
     } else if (new_key_code == 13 && evt.ctrlKey) {
         window.history.back();
@@ -104,20 +170,40 @@ var handle_char = function(evt) {
     }
 };
 
+var export_current = function() {
+    Storage.export_pages(false);
+};
+
+var export_all = function() {
+    if (confirm("This action will export every version of every page in the wiki. It may take some time or use a lot of memory. Is that OK?")) {
+        Storage.export_pages(true);
+    }
+};
+
 var rebuild_indexes = function() {
-    Storage.clear_search_index();
+    if (confirm("This action will delete the index used for searching. It may take some time to rebuild. Is that OK?")) {
+        Storage.clear_search_index();
+    }
 };
 
 var delete_all = function() {
-    Storage.delete_all_data();
+    if (confirm("This action will remove all keywiki content from the storage in this browser.\nAre you sure you want to delete everything?")) {
+        Storage.delete_all_data();
+    }
+};
+
+var delete_archives = function() {
+    if (confirm("This action will remove all old versions of the pages stored in this browser.\nIs that OK?")) {
+        Storage.delete_archives();
+    }
 };
 
 var init = function() {
-    if ('indexedDB' in window) {
+    if ('indexedDB' in window && !!new Blob) {
         document.getElementById('db_warning').style.display = 'none';
     }
 
-    var textarea = document.getElementById('editor');    
+    var textarea = document.getElementById('editor');
     textarea.onkeypress = handle_char;
 
     var welcome = document.getElementById('welcome').value;
@@ -128,88 +214,186 @@ var init = function() {
     window.onhashchange = (function() { 
         return function() {
             console.log('Hash changed to '+document.location.hash);
-            var id_match = /^#?([^&]+)/.exec(document.location.hash);
-            if (id_match) {
-                var new_page_id = id_match[1];
-            } else {
-                var new_page_id = 0;
+
+            if (!document.location.hash) {
+                console.log("No hash, going to front page");
+                follow_link("Front page");
+                return;
             }
 
-            var title_hint_match = /&title_hint=([^&]+)/.exec(document.location.hash);
-            if (title_hint_match) {
-                var title_hint = title_hint_match[1];
-            } else {
-                var title_hint = 'Home';
-            }
+            var location = Location.from_hash();
 
-            Storage.switch_page(textarea, LAST_PAGE_ID, new_page_id, title_hint,
+            Storage.switch_page(textarea, location.page_id, location.title_hint, location.from_page_id, location.from_title_hint, location.template,
                 function(result) {
                     console.log("Updating navigation...");
                     Navigation.clear();
                     if (result) {
+                        /* add button for this page, to denote that it's "real" */
                         Navigation.add(result, true);
                         var except_id = result.id;
+                        if (!location.title_hint) {
+                            location.title_hint = result.first_line;
+                        }
                     } else {
                         var except_id = null;
                     }
-                    Storage.update_search(title_hint, except_id,
+
+                    /* add button for the page we came from */
+                    if (location.from_page_id) {
+                        if (location.from_title_hint) {
+                            Navigation.add( { id: location.from_page_id,
+                                              first_line: location.from_title_hint } );
+                        } else {
+                            console.log("Don't have a name for previous page "+location.from_page_id);
+                            Navigation.add( { id: location.from_page_id,
+                                              first_line: "(Back)" } );
+                        }
+                    }
+
+                    /* collect search results for current title hint*/
+                    Storage.update_search(location.title_hint, except_id,
                         function(search_result) {
                             console.log('Adding search navigation: '+search_result.first_line);
                             Navigation.add(search_result, false);
                         },
                         function() {
-                            console.log('No search results for '+title_hint);
+                            console.log('No search results for '+location.title_hint);
                         }
                     );
                 }
             );
-
-            LAST_PAGE_ID = new_page_id;
         }
     }(textarea));
 
 };
 
+var toggle_help = function() {
+    var help = document.getElementById('help-container');
+    if (help.style.display == 'block') {
+        help.style.display = 'none';
+    } else {
+        help.style.display = 'block';
+    }
+};
+
 </script>
 </head>
 <body onload="init()">
-<div id="db_warning">Sorry, you'll need HTML 5 (IndexedDB) to use this app.</div>
-<table class="full">
-    <tr class="full">
-        <td id="nav">
-        </td>
-        <td style="width: 100%;">
+<div class="warning" id="db_warning">
+    Sorry, you'll need an HTML 5 browser (with IndexedDB and Blob support) to use this app.
+</div>
+<div class="full columns">
+    <div class="full edit-container">
             <textarea id="editor">
             </textarea>
-        <td>
-    </tr>
-</table>
-<div>
-    <button onclick="rebuild_indexes()">Rebuild indexes</button>
-    <button onclick="delete_all()">Delete all</button>
+    </div>
+    <div class="full nav-container">
+        <div id="nav"></div>
+        <div>
+            <ul>
+                <li class="nav-normal"><button onclick="document.location.href='.'">Front page</button></li>
+                <li><button onclick="follow_link()">Enter</button></li>
+                <li><button onclick="toggle_help()">Help</button></li>
+            </ul>
+        </div>
+    </div>
 </div>
-<div style="display: none"><textarea id="welcome">
-Welcome to keywiki, a portable wiki for your own notes.
+<div style="display: none">
+<a id="save_link" href=".">
+(This link will be 'clicked' by the script to download an export file)
+</a>
+<textarea id="welcome">
+Welcome to keywiki, a minimal, portable wiki for your own notes.
+Press Shift-ENTER to navigate.
 
-- Type in any plain text format you care to.
-  The 'name' of a page is its first line.
-- Press Ctrl-ENTER with the cursor (caret) inside a word
-  to switch to the page whose name matches the word.
-- If you are looking at a stored page, 
-  you'll see its name in the pink button to the left.
-- If you switch to a page that doesn't yet exist,
-  a new page will be prepared for you ending in &#x270f;
-  Remove the &#x270f; and start writing!
-- As you create pages, blue buttons will appear to the left.
-  keywiki automatically searches and shows you all the pages
-  that contain the name (first line) of the page,
-  anywhere in their text.
-  Click on a button to switch to the page.
-- Your work is saved whenever you switch pages.
-  Everything is stored inside your browser,
-  nothing goes to the internet.
+Happy writing!
+</textarea></div>
+<div id="help-container">
+<div id="help" onclick="toggle_help()">
+<h1>keywiki v1.0</h1>
+<p><small>Click anywhere in this box to hide it.</small></p>
+<ul>
+    <li>Type in any plain text format you care to.
+        The 'name' of a page is its first line.</li>
+    <li>Press <kbd>Shift</kbd>-<kbd>ENTER</kbd> with the cursor (caret) inside a word
+        to link to the page whose name matches the word.</li>
+    <li>If you are looking at a stored page, 
+      you'll see its name in the pink button to the left.</li>
+    <li>If you switch to a page that doesn't yet exist,
+      a new page will be prepared for you.</li>
+    <li>As you create pages, blue buttons will appear to the left.
+      keywiki automatically searches and shows you all the pages
+      that contain the name (first line) of the page,
+      anywhere in their text.
+      Click on a button to switch to the page.</li>
+    <li>Your work is saved whenever you switch pages.
+      Everything is stored inside your browser,
+      nothing goes to the internet.</li>
+    <li>To delete a page, remove all its content.</li>
+</ul>
+<h2>Tips</h2>
+<p>
+    <tt>&lt;</tt> <tt>&gt;</tt> <tt>_</tt>
+    characters are counted as part of the current word
+    as well as alphanumeric characters.
+</p>
+<ul>
+    <li>
+        To link to a page with multiple words in its first line,
+        join the words with underscores in the link.
+        Keywiki counts underscores as part of a word,
+        but will treat them as spaces when looking for the linked page,
+        so 'my_new_page' will link to the page 'my new page'.
+    </li>
+    <li>
+        Page searches are not case sensitive.
+    </li>
+</ul>
+<p>
+    You can also use CamelCase to provide multi-word titles.
+</p>
+<p>
+    The "Enter" button acts like pressing <kbd>Shift-ENTER</kbd>
+    for touch screens.
+</p>
 
-Happy writing!</textarea></div>
+        <h1>Maintenance area</h1>
+        <ul>
+            <li>
+                <p>
+                    To export a snapshot of the pages in the wiki in JSON format,
+                </p>
+                <button onclick="export_current()">Export</button>
+            </li>
+            <li>
+                <p>
+                    To export the complete database, including every modification of each page,
+                </p>
+                <button onclick="export_all()">Export with full history</button>
+            </li>
+            <li>
+                <p>
+                    If you're getting irrelevant pages showing up in the sidebar,
+                    or if the search is getting slow,
+                </p>
+                <button onclick="rebuild_indexes()">Rebuild search indexes</button>
+            </li>
+            <li>
+                <p>
+                    Keywiki archives all the old versions of each page.
+                    If you want to remove all the archived pages,
+                </p>
+                <button onclick="delete_archives()">Delete archives</button>
+            </li> 
+            <li>
+                <p>
+                    If you no longer want this browser to keep any keywiki data,
+                </p>
+                <button onclick="delete_all()">Delete all data</button>
+            </li> 
+        </ul>
+</div>
+</div>
 </body>
 </html>
 

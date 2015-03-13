@@ -34,29 +34,12 @@ Backlog
 
 These features are not yet implemented!
 
-For 1.0
--------
-
-- Export everything
-- Issue: IndexedDB index intermittently fails to return a page. Maybe I need to wait for an index updated event?
-
-Later
------
-
-- Export pages listed in side bar
+- View list of all pages
+- Char map tool
+- Page colours
 - Preferences mechanism
-- Preferences option to disable/remap the _
-- Preferences option to disable Ctrl-ENTER 
-- Page colour picker
-- Clean up old page versions from database
+- Preferences option to disable/remap Ctrl-ENTER
+- Export pages listed in side bar
 - Possibly replace fullproof:
     it's not actively maintained and doesn't do stemming
     OTOH, unlike lunr.js it can use IndexedDB not just memory.
-    
-
-Ideas
------
-
-Simple templates could be done by hooking a page to another 'template' page, so the 'template' page is just displayed to the 
-side of the main page. This could be useful because a lot of the time you just want a set of common headings.
-
