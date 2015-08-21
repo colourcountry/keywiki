@@ -1,0 +1,3 @@
+[submodule "fullproof"]
+	path = fullproof
+	url = git@github.com:reyesr/fullproof

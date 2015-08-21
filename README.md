@@ -4,7 +4,8 @@ A stand-alone mini-wiki in an HTML5 page with no links!
 
 Install
 =======
-Get fullproof from github and copy it to fullproof.js in this directory.
+Run ./install_fullproof.sh to build the fullproof submodule and create fullproof.js
+
 Then load up index.html in your browser.
 
 Usage

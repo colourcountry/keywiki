@@ -119,6 +119,11 @@ button {
 <script type="application/javascript" src="navigation.js"></script>
 <script type="application/javascript">
 
+var get_current_word = function() {
+    var textarea = document.getElementById('editor');
+    return Textarea.get_current_word(textarea);
+}
+
 /*
     Follow a link to the named page.
     Parameters:
@@ -130,8 +135,7 @@ var follow_link = function(title_hint, template) {
     var location = Location.from_hash();
 
     if (!title_hint) {
-        var textarea = document.getElementById('editor');
-        var title_hint = Textarea.get_current_word(textarea);
+        var title_hint = get_current_word();
     }
 
     if (!template) {
@@ -141,16 +145,30 @@ var follow_link = function(title_hint, template) {
         }
     }
 
-    Storage.find_page(title_hint,
-        function(result) {
-            if (result) {
-                Location.set( result.id, result.first_line, location.page_id, location.title_hint );
+    if (title_hint.indexOf('://') > -1) {
+        window.open( title_hint );
+    } else {
+        Storage.find_page(title_hint,
+            function(result) {
+                if (result) {
+                    Location.set( result.id, result.first_line, location.page_id, location.title_hint );
+                }
+            },
+            function() {
+                Location.set( ''+new Date().getTime(), title_hint, location.page_id, location.title_hint, template );
             }
-        },
-        function() {
-            Location.set( ''+new Date().getTime(), title_hint, location.page_id, location.title_hint, template );
-        }
-    );
+        );
+    }
+}
+
+var update_enter_button = function() {
+    var cur_word = get_current_word();
+    if (cur_word) {
+        document.getElementById('enter_button').firstChild.nodeValue = get_current_word();
+        document.getElementById('enter_li').style.display = 'block';
+    } else {
+        document.getElementById('enter_li').style.display = 'none';
+    }
 }
 
 var handle_char = function(evt) {
@@ -205,6 +223,8 @@ var init = function() {
 
     var textarea = document.getElementById('editor');
     textarea.onkeypress = handle_char;
+    textarea.onkeyup = update_enter_button;
+    textarea.onclick = update_enter_button;
 
     var welcome = document.getElementById('welcome').value;
     
@@ -292,7 +312,7 @@ var toggle_help = function() {
         <div>
             <ul>
                 <li class="nav-normal"><button onclick="document.location.href='.'">Front page</button></li>
-                <li><button onclick="follow_link()">Enter</button></li>
+                <li class="nav-normal" id="enter_li" style="display: none"><button id="enter_button" onclick="follow_link()">Enter</button></li>
                 <li><button onclick="toggle_help()">Help</button></li>
             </ul>
         </div>
